@@ -1,0 +1,413 @@
+---
+title: "Group Homework"
+subtitle: "Summary report for the 
+Student Performance Factors dataset"
+date: today
+author: 林修平、許弘澤、郭育維、黃琮竣、蔡秉杰
+format: 
+   pdf:
+    math: true
+    include-in-header:
+      - text: |
+         \usepackage{setspace,relsize}
+         \usepackage{geometry}
+         \geometry{verbose,tmargin=2.5cm,bmargin=2.5cm,lmargin=2.5cm,rmargin=2.5cm}
+#mainfont: "Microsoft JhengHei UI"
+#mainfont: "Microsoft JhengHei"
+mainfont: "Microsoft JhengHei Bold"
+toc: true
+lang: zh-Tw
+documentclass: article
+pdf-engine: xelatex
+execute:
+  tidy: true
+  echo: true
+  output: true
+  warning: false
+  message: false
+---
+
+## 一、讀取資料
+
+```{r}
+#| results: asis
+# R Interface to Python
+library(reticulate)               # Make R and Python interoperable, allowing R to call Python code.
+use_python("C:/Users/user/anaconda3/python.exe", required = TRUE)  # Finding Anaconda's Python path
+library(Hmisc)                    # data analysis and report tools
+library(ggplot2)                  # a system for creating graphics
+library(tableone)                 # a tool for creating tableone
+library(dplyr)
+library(broom)
+library(kableExtra)
+# read dataset
+Students_data <- read.csv("C:/Users/user/Downloads/StudentPerformanceFactors.csv") 
+# data description
+latex(describe(Students_data), descript = "descriptive statistics", file = '', caption.placement = 'top')
+```
+
+## 二、data information
+
+\begin{enumerate}
+    \item \textbf{Hours\_Studies}：學生每週花多少小時讀書（單位：hr/week）
+    \item \textbf{Attendance}：學生在課程上的出席率（單位：\%）
+    \item \textbf{Parental\_Involvement}：家長對小朋友教育的參與程度（順序尺度：High > Medium > Low）
+    \item \textbf{Access\_to\_Resources}：學生獲得的教育資源（順序尺度：High > Medium > Low）
+    \item \textbf{Extracurricular\_Activities}：學生是否有參與課外活動（Yes, No）
+    \item \textbf{Sleep\_Hours}：學生每天晚上睡多少小時（單位：hr/each night）
+    \item \textbf{Previous\_Scores}：學生前幾次小考的成績
+    \item \textbf{Motivation\_Level}：學生的學習動機（順序尺度：High > Medium > Low）
+    \item \textbf{Internet\_Access}：學生在家是否有網路可以上網（Yes, No）
+    \item \textbf{Tutoring\_Sessions}：學生每個月參加的輔導課程數
+    \item \textbf{Family\_Income}：學生的家庭收入水平（順序尺度：High > Medium > Low）
+    \item \textbf{Teacher\_Quality}：老師教學品質（順序尺度：High > Medium > Low）
+    \item \textbf{School\_Type}：學生就讀的學校類型（Public, Private）
+    \item \textbf{Peer\_Influence}：同儕對學生的學業影響（順序尺度：Positive > Neutral > Negative）
+    \item \textbf{Physical\_Activity}：學生每週平均運動時數（單位：hr/week）
+    \item \textbf{Learning\_Disabilities}：學生是否有學習障礙
+    \item \textbf{Parental\_Education\_Level}：家長的最高教育程度（順序尺度：Postgraduate > College > High School）
+    \item \textbf{Distance\_from\_Home}：學生從家裡到學校的距離（順序尺度：Far > Moderate > Near）
+    \item \textbf{Gender}：學生的生理性別
+    \item \textbf{Exam\_Score}：學生的最終考試成績（因變數 $Y$）
+\end{enumerate}
+
+## 三、data analysis - Backward elimination method
+
+```{r}
+#| results: asis
+# Missing value transfer to NA
+Students_data[Students_data == "" | Students_data == " "] <- NA
+
+# 定義類別變數（這些變數會轉換為因子）
+categorical_vars <- c("Parental_Involvement",
+                      "Access_to_Resources",
+                      "Extracurricular_Activities",
+                      "Motivation_Level",
+                      "Internet_Access",
+                      "Family_Income",
+                      "Teacher_Quality",
+                      "School_Type",
+                      "Peer_Influence",
+                      "Learning_Disabilities",
+                      "Parental_Education_Level",
+                      "Distance_from_Home",
+                      "Gender")
+
+full_model <- lm(Exam_Score ~ ., data = Students_data)
+tidy(full_model) |>
+  kbl(digits = 3, caption = "Regression for coefficient") |>
+  kable_styling(latex_options = c("scale_down", "striped"))
+
+t(glance(full_model)) |>
+  kbl(digits = 3, caption = "Full model statistic") |>
+  kable_styling()
+
+```
+
+\clearpage
+
+If we conduct backward selection (criterion of BIC)
+
+```{r}
+#| results: asis
+n <- nrow(Students_data)
+
+invisible(capture.output({
+  backward_model <- step(full_model, direction = "backward", k = log(n))
+}))
+
+
+tidy(backward_model) |>
+  kbl(digits = 3, caption = "Regression for coefficient") |>
+  kable_styling(latex_options = c("scale_down", "striped"))
+
+t(glance(backward_model)) |>
+  kbl(digits = 3, caption = "Full model statistic") |>
+  kable_styling()
+
+
+library(lmtest)
+bptest(backward_model)
+```
+
+```{r}
+# Check the number of variables before selection (excluding the intercept)
+length(coefficients(full_model)) - 1
+
+# Check the number of variables after selection
+length(coefficients(backward_model)) - 1
+
+# Extract variable names from full_model
+full_vars <- attr(terms(full_model), "term.labels")
+
+# Extract variable names from backward_model
+backward_model_variable_names <- attr(terms(backward_model), "term.labels")
+
+# Identify removed variables
+removed_vars_by_backward_model <- setdiff(full_vars, backward_model_variable_names)
+
+# Display the removed variables
+print(removed_vars_by_backward_model)
+```
+
+## 四、Data Preprocessing and Stepwise Selection with BIC for Student Performance Analysis
+
+```{r}
+# Stepwise Selection with BIC
+# direction = "both": indicates bidirectional selection (both forward and backward)
+# k = log(n) is the penalty term for BIC
+stepwise_model_BIC <- step(full_model, direction = "both", k = log(n))
+
+# Display regression coefficients after variable selection
+tidy(stepwise_model_BIC) |>
+  kbl(digits = 3, caption = "Stepwise Selection (BIC) - Regression Coefficients") |>
+  kable_styling(latex_options = c("scale_down", "striped"))
+
+# Display stepwise_model_BIC statistics
+t(glance(stepwise_model_BIC)) |>
+  kbl(digits = 3, caption = "Stepwise Selection (BIC) - Model Statistics") |>
+  kable_styling()
+```
+
+
+```{r}
+# Check the number of variables before selection (excluding the intercept)
+length(coefficients(full_model)) - 1
+
+# Check the number of variables after selection
+length(coefficients(stepwise_model_BIC)) - 1
+
+# Extract variable names from full_model
+full_vars <- attr(terms(full_model), "term.labels")
+
+# Extract variable names from stepwise_model_BIC
+stepwise_vars <- attr(terms(stepwise_model_BIC), "term.labels")
+
+# Identify removed variables
+removed_vars <- setdiff(full_vars, stepwise_vars)
+
+# Display the removed variables
+print(removed_vars)
+```
+
+```{python}
+#| label: Stepwise Selection in R
+import pandas as pd     # Data analysis
+from sklearn.preprocessing import LabelEncoder  # Encode categorical data
+
+# read CSV 
+Students_data = pd.read_csv("C:/Users/user/Downloads/StudentPerformanceFactors.csv")
+
+# Handling missing values
+Students_data1 = Students_data.dropna().copy()
+print(Students_data1.shape)
+
+# Define the variables that need to be encoded
+label_mapping = {
+    'Parental_Involvement': {'Low': 0, 'Medium': 1, 'High': 2},
+    'Access_to_Resources': {'Low': 0, 'Medium': 1, 'High': 2},
+    'Motivation_Level': {'Low': 0, 'Medium': 1, 'High': 2},
+    'Family_Income': {'Low': 0, 'Medium': 1, 'High': 2},
+    'Teacher_Quality': {'Low': 0, 'Medium': 1, 'High': 2},
+    'Extracurricular_Activities': {'No': 0, 'Yes': 1},
+    'Internet_Access': {'No': 0, 'Yes': 1},
+    'Learning_Disabilities': {'No': 0, 'Yes': 1},
+    'School_Type': {'Public': 0, 'Private': 1},
+    'Gender': {'Female': 0, 'Male': 1},
+    'Peer_Influence': {'Negative': 0, 'Neutral': 1, 'Positive': 2},
+    'Distance_from_Home': {'Far': 0, 'Moderate': 1, 'Near': 2},
+    'Parental_Education_Level': {'High School': 0, 'College': 1, 'Postgraduate': 2}
+}
+
+# Label Encoding
+for column, mapping in label_mapping.items():
+    # Ensure column names match those in the data
+    if column in Students_data1.columns:
+        # Convert category values to title case
+        Students_data1[column] = Students_data1[column].str.strip().str.title()
+        # Apply the mapping
+        Students_data1[column] = Students_data1[column].map(mapping)
+    else:
+        print(f"Column {column} does not exist!")
+
+# Check the data after encoding
+print("\nData after encoding:")
+print(Students_data.head())
+
+# Confirm data types after encoding
+print("\nData types after encoding:")
+print(Students_data1.dtypes)
+```
+
+```{python}
+#| label: manual Stepwise Selection in python
+import numpy as np  # Numerical computing
+import pandas as pd  # Data analysis
+import statsmodels.api as sm # statistical modeling
+from mlxtend.feature_selection import SequentialFeatureSelector as SFS # provides additional tools for ML
+from sklearn.linear_model import LinearRegression  # Linear Regression Package
+
+# Define X and y
+X = Students_data1.drop(columns=['Exam_Score'])  # Features
+y = Students_data1['Exam_Score']  # Target
+
+# Define a manual Stepwise Selection function (based on BIC)
+# verbose=True, Display detailed information when running
+def stepwise_selection_bic(X, y, verbose=True):
+    included = []  # Initial list of variables
+    best_bic = float('inf')  # Set initial BIC to infinity, In order to ensure that the first comparison is established
+    
+    while True:
+        changed = False
+        
+        # Forward Selection: Attempt to add variables
+        excluded = list(set(X.columns) - set(included)) # Find the variables that have not been selected
+        new_bic = pd.Series(index=excluded, dtype=float) # Store BIC value after each unselected variable is added.
+        for new_column in excluded:
+            model = sm.OLS(y, sm.add_constant(X[included + [new_column]])).fit()
+            new_bic[new_column] = model.bic
+        best_new_bic = new_bic.min()  # Find the smallest (best) BIC value among all new models.
+        # Find the variable corresponding to the minimum BIC, add it to the selection list and update it.
+        if best_new_bic < best_bic:
+            best_feature = new_bic.idxmin()
+            included.append(best_feature)
+            best_bic = best_new_bic
+            changed = True
+            if verbose:
+                print(f'Add variable: {best_feature}, BIC = {best_bic:.2f}')
+        
+        # Backward Selection: Attempt to remove variables
+        # If there are already selected variables, then backward selection is performed.
+        if included:
+            model = sm.OLS(y, sm.add_constant(X[included])).fit() # Calculate BIC
+            current_bic = model.bic
+            # Test each selected variable
+            for var in included:
+                temp_included = included.copy()
+                temp_included.remove(var)
+                model = sm.OLS(y, sm.add_constant(X[temp_included])).fit()
+                # If BIC after removal is less than the current best BIC, remove it from the selection list.
+                if model.bic < best_bic:
+                    best_bic = model.bic
+                    worst_feature = var
+                    included.remove(worst_feature)
+                    changed = True
+                    if verbose:
+                        print(f'Remove variable: {worst_feature}, BIC = {best_bic:.2f}')
+        
+        if not changed:
+            break
+    
+    return included
+
+# Perform manual Stepwise Selection
+print("\n=== Manual Implementation of Stepwise Selection (Based on BIC) ===")
+selected_vars_manual = stepwise_selection_bic(X, y, verbose=True)
+
+# Display the final selected variables
+print("\nFinal selected variables (Manual Implementation):")
+print(selected_vars_manual)
+
+# Calculate the number of final variables
+num_selected_vars_manual = len(selected_vars_manual)
+print(f"\nNumber of remaining variables (Manual Implementation): {num_selected_vars_manual}")
+
+# Identify removed variables
+all_vars = list(X.columns)
+removed_vars_manual = list(set(all_vars) - set(selected_vars_manual))
+print("\nRemoved variables (Manual Implementation):")
+print(removed_vars_manual)
+
+# Fit the final model and display the summary
+final_model_manual = sm.OLS(y, sm.add_constant(X[selected_vars_manual])).fit()
+print("\nFinal model summary (Manual Implementation):")
+print(final_model_manual.summary())
+```
+
+```{python}
+# use the command below to install package (run it once)
+# !pip install mlxtend
+```
+
+```{python}
+#| label: use SFS to Stepwise Selection in python
+# Define a custom BIC scoring function
+def bic_scorer(estimator, X, y):
+    model = sm.OLS(y, sm.add_constant(X)).fit()
+    return -model.bic  # Return negative BIC (because SFS maximizes the score)
+
+# Define the regression model
+lr = LinearRegression()
+
+# Define Stepwise Selection (based on BIC)
+sfs = SFS(lr,
+          k_features='best',  # Automatically select the best number of variables
+          forward=True,       # Forward selection
+          floating=True,      # Allow backward removal (similar to R's "both")
+          scoring=bic_scorer,  # Use the custom BIC scoring function
+          cv=0)               # Do not use cross-validation
+
+# Fit the data
+print("\n=== Perform Stepwise Selection Using mlxtend (Based on BIC) ===")
+sfs = sfs.fit(X, y)
+
+# Display the final selected variables
+selected_vars_mlxtend = list(sfs.k_feature_names_)
+print("\nFinal selected variables (mlxtend):")
+print(selected_vars_mlxtend)
+
+# Calculate the number of final variables
+num_selected_vars_mlxtend = len(selected_vars_mlxtend)
+print(f"\nNumber of remaining variables (mlxtend): {num_selected_vars_mlxtend}")
+
+# Identify removed variables
+removed_vars_mlxtend = list(set(all_vars) - set(selected_vars_mlxtend))
+print("\nRemoved variables (mlxtend):")
+print(removed_vars_mlxtend)
+
+# Fit the final model and display the summary
+final_model_mlxtend = sm.OLS(y, sm.add_constant(X[selected_vars_mlxtend])).fit()
+print("\nFinal model summary (mlxtend):")
+print(final_model_mlxtend.summary())
+```
+
+## 五、模型診斷
+
+```{r}
+# 檢查殘差的常態性
+qqnorm(residuals(backward_model))
+qqline(residuals(backward_model), col = "red", lwd = 2)
+
+# 檢查殘差的同質變異數
+plot(backward_model$fitted.values, residuals(backward_model))
+abline(h = 0, col = "red")
+
+ggplot(Students_data, aes_string(x ="Physical_Activity", y = "Exam_Score")) + 
+  geom_point(alpha = 0.5) + 
+  ggtitle("Scatter Plot of Physical_Activity vs. Exam_Score")
+```
+
+\begin{enumerate}
+\item[1.] QQ-plot顯示原始資料具有嚴重右偏的趨勢。
+\item[2.] 用boxcox轉換無法有效解決違反模型假設的問題。
+\item[3.] 以每週平均運動時間為例，運動時間並無和分數有明顯線性關係，
+
+雖然逐步回歸有將該解釋變數選入，但根據模型基礎假設，應該將此變數刪除。
+
+\item[4.] 在逐步回歸模型的基礎下，考慮所有解釋變數對應變數的散佈圖、盒狀圖，
+
+將Physical\_Activity、Previous\_Scores兩個變數手動刪除
+\end{enumerate}
+
+## 六、Results
+
+\begin{enumerate}
+\item[1.] 經由第三部分，Backward Selection Using BIC Strategy，最終刪除3個特徵變數，['School\_Type', 'Sleep\_Hours', 'Gender']。
+
+\item[2.] 經由第四部份，Stepwise Selection Using BIC Strategy，最終也是刪除3個特徵變數，['School\_Type', 'Sleep\_Hours', 'Gender']。
+
+\item[3.] 經由第五部份模型診斷，在逐步回歸模型的基礎下，考慮所有解釋變數對應變數的散佈圖、盒狀圖，將Physical\_Activity、Previous\_Scores兩個變數手動刪除。
+
+\item[4.] 但是還是不符合其模型假設，因此該筆資料或許不適用於傳統回歸模型。
+
+\end{enumerate}
